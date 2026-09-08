@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>招標特徵萃取</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.min.mjs" type="module"></script>
+<style>
+/* ── Tokens ── */
+:root {
+  --bg:         #ECF0F6;
+  --surface:    #FFFFFF;
+  --surface2:   #F4F7FB;
+  --nav:        #1A2236;
+  --border:     #D1D9E6;
+  --text:       #1A2236;
+  --text2:      #3D4E68;
+  --muted:      #6B7A99;
+  --green:      #1A8055;
+  --green-bg:   #EAFAF3;
+  --green-br:   #A8DEC4;
+  --amber:      #B87316;
+  --amber-bg:   #FFF7EA;
+  --amber-br:   #F5CB85;
+  --blue:       #1E4DB7;
+  --blue-bg:    #EBF0FC;
+  --blue-br:    #B3C4F0;
+  --err-bg:     #FFF0EE;
+  --err-br:     #F5C0BA;
+  --err-text:   #C0392B;
+  --shadow:     0 1px 3px rgba(0,0,0,.08);
+  --radius:     6px;
+  --mono:       'JetBrains Mono', 'Courier New', monospace;
+  --sans:       'Noto Sans TC', -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:        #0C1220;
+    --surface:   #182030;
+    --surface2:  #1E2840;
+    --nav:       #0A0F1C;
+    --border:    #2A374F;
+    --text:      #DDE4F0;
+    --text2:     #9AABC4;
+    --muted:     #5A6E8C;
+    --green:     #34C780;
+    --green-bg:  #0A2018;
+    --green-br:  #1A5038;
+    --amber:     #EDAB45;
+    --amber-bg:  #1A1000;
+    --amber-br:  #5A3A00;
+    --blue:      #5B8DEF;
+    --blue-bg:   #101E3A;
+    --blue-br:   #253A6A;
+    --err-bg:    #200A08;
+    --err-br:    #5A1A12;
+    --err-text:  #FF8C82;
+    --shadow:    0 1px 3px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"] {
+  --bg:        #0C1220;
+  --surface:   #182030;
+  --surface2:  #1E2840;
+  --nav:       #0A0F1C;
+  --border:    #2A374F;
+  --text:      #DDE4F0;
+  --text2:     #9AABC4;
+  --muted:     #5A6E8C;
+  --green:     #34C780;
+  --green-bg:  #0A2018;
+  --green-br:  #1A5038;
+  --amber:     #EDAB45;
+  --amber-bg:  #1A1000;
+  --amber-br:  #5A3A00;
+  --blue:      #5B8DEF;
+  --blue-bg:   #101E3A;
+  --blue-br:   #253A6A;
+  --err-bg:    #200A08;
+  --err-br:    #5A1A12;
+  --err-text:  #FF8C82;
+  --shadow:    0 1px 3px rgba(0,0,0,.3);
+}
+
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; }
+body { font-family: var(--sans); background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh; }
+button, input, select { font-family: inherit; font-size: inherit; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { opacity: 1; }
+a { color: var(--blue); }
+*:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ── Header ── */
+.hdr {
+  background: var(--nav);
+  color: #E8EDF5;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+.hdr-icon { font-size: 20px; }
+.hdr-title { font-size: 15px; font-weight: 700; letter-spacing: .01em; }
+.hdr-sub { font-size: 12px; color: #6B7E9C; }
+.hdr-space { flex: 1; }
+.btn-theme {
+  background: transparent;
+  border: 1px solid #2D3A52;
+  border-radius: 4px;
+  color: #6B7E9C;
+  cursor: pointer;
+  padding: 5px 10px;
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  transition: border-color .15s, color .15s;
+}
+.btn-theme:hover { border-color: #4D5E7A; color: #C8D4E8; }
+
+/* ── API bar ── */
+.api-bar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 9px 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.api-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.api-input {
+  flex: 1;
+  max-width: 420px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.api-input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 15%, transparent); }
+.api-note { font-size: 12px; color: var(--muted); }
+
+/* ── Layout ── */
+.main { max-width: 1080px; margin: 0 auto; padding: 24px 20px 60px; }
+
+/* ── Cards ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.card-head {
+  padding: 13px 20px 11px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.step-dot {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--nav);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.card-title { font-size: 14px; font-weight: 600; }
+.card-caption { font-size: 12px; color: var(--muted); margin-left: auto; }
+.card-body { padding: 18px 20px; }
+
+/* ── Upload ── */
+.upload-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 8px;
+  padding: 22px 16px;
+  text-align: center;
+  cursor: pointer;
+  position: relative;
+  transition: border-color .2s, background .2s;
+}
+.drop-zone:hover { border-color: var(--blue); background: var(--blue-bg); }
+.drop-zone.active { border-color: var(--green); border-style: solid; background: var(--green-bg); }
+.drop-zone input[type="file"] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+}
+.dz-icon { font-size: 26px; margin-bottom: 8px; }
+.dz-lbl { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+.dz-sub { font-size: 12px; color: var(--muted); }
+.dz-file { display: none; font-size: 11px; font-family: var(--mono); color: var(--green); margin-top: 6px; word-break: break-all; }
+.drop-zone.active .dz-file { display: block; }
+.drop-zone.active .dz-sub { display: none; }
+
+/* ── Status bar ── */
+.status {
+  display: none;
+  margin: 0 20px 14px;
+  padding: 9px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  align-items: center;
+  gap: 10px;
+}
+.status.loading { display: flex; background: var(--blue-bg); color: var(--blue); border: 1px solid var(--blue-br); }
+.status.ok      { display: flex; background: var(--green-bg); color: var(--green); border: 1px solid var(--green-br); }
+.status.err     { display: flex; background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-br); }
+.spin {
+  width: 15px; height: 15px; flex-shrink: 0;
+  border: 2px solid currentColor; border-top-color: transparent;
+  border-radius: 50%;
+  animation: rot .7s linear infinite;
+}
+@keyframes rot { to { transform: rotate(360deg); } }
+
+/* ── Primary button ── */
+.btn-extract {
+  width: 100%; padding: 12px; margin: 0 0 18px;
+  background: var(--nav); color: white;
+  border: none; border-radius: var(--radius);
+  font-size: 14px; font-weight: 600;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: background .15s;
+}
+.btn-extract:hover:not(:disabled) { background: #273347; }
+.btn-extract:disabled { opacity: .38; cursor: not-allowed; }
+.btn-wrap { padding: 0 20px; }
+
+/* ── Feature columns ── */
+.feat-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+.sub-title {
+  font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted); border-bottom: 1px solid var(--border);
+  padding-bottom: 8px; margin-bottom: 12px;
+}
+.sub-gap { margin-top: 20px; }
+
+/* ── Field variants ── */
+.field {
+  border-radius: var(--radius);
+  padding: 9px 13px;
+  margin-bottom: 9px;
+}
+.field-g { background: var(--green-bg); border: 1px solid var(--green-br); border-left: 3px solid var(--green); }
+.field-a { background: var(--amber-bg); border: 1px solid var(--amber-br); border-left: 3px solid var(--amber); }
+.field-n { background: var(--surface2); border: 1px solid var(--border); }
+.field-b { background: var(--blue-bg); border: 1px solid var(--blue-br); border-left: 3px solid var(--blue); }
+
+.field-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.field-lbl { font-size: 12px; color: var(--muted); font-weight: 500; }
+.badge {
+  font-size: 10px; font-weight: 700; letter-spacing: .03em;
+  border-radius: 10px; padding: 1px 7px; margin-left: auto;
+}
+.bg-g  { background: var(--green); color: white; }
+.bg-a  { background: var(--amber); color: white; }
+.bg-b  { background: var(--blue);  color: white; }
+.field-val {
+  font-family: var(--mono); font-size: 18px; font-weight: 500;
+  color: var(--text); font-variant-numeric: tabular-nums;
+}
+.field-val .unit { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+
+.llm-hint { font-size: 11px; color: var(--blue); margin-bottom: 5px; }
+.llm-hint::before { content: '⚡ LLM：'; }
+
+.f-input {
+  width: 100%; padding: 7px 10px;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--surface); color: var(--text);
+  font-family: var(--mono); font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  outline: none; transition: border-color .15s;
+}
+.f-input:focus { border-color: var(--blue); }
+.f-select {
+  width: 100%; padding: 7px 30px 7px 10px;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--surface); color: var(--text); font-size: 13px;
+  outline: none; cursor: pointer; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' viewBox='0 0 12 7'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236B7A99' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+  transition: border-color .15s;
+}
+.f-select:focus { border-color: var(--blue); }
+
+/* ── Info bar ── */
+.info-bar {
+  background: var(--blue-bg); border: 1px solid var(--blue-br);
+  border-radius: var(--radius); padding: 9px 16px;
+  font-size: 12px; color: var(--text2);
+  display: flex; gap: 20px; flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.info-bar strong { color: var(--text); }
+
+/* ── Metric grid ── */
+.metric-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.m-tile {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 11px 13px;
+}
+.m-tile.missing { border-color: var(--amber-br); }
+.m-lbl { font-size: 11px; color: var(--muted); margin-bottom: 3px; line-height: 1.3; }
+.m-val { font-family: var(--mono); font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.m-val.empty { color: var(--muted); }
+.m-unit { font-size: 10px; color: var(--muted); margin-top: 1px; }
+
+/* ── Actions ── */
+.action-row { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+.btn-dl {
+  padding: 10px 22px;
+  background: var(--green); color: white;
+  border: none; border-radius: var(--radius);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 7px;
+  transition: filter .15s;
+}
+.btn-dl:hover { filter: brightness(1.1); }
+.btn-pred {
+  padding: 10px 20px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: 13px; cursor: not-allowed;
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.pred-note { font-size: 12px; color: var(--muted); }
+
+/* ── Responsive ── */
+@media (max-width: 680px) {
+  .upload-row, .feat-cols { grid-template-columns: 1fr; }
+  .metric-grid { grid-template-columns: repeat(2, 1fr); }
+  .hdr-sub { display: none; }
+  .api-input { max-width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="hdr">
+  <span class="hdr-icon">🏗️</span>
+  <span class="hdr-title">公共工程招標特徵萃取系統</span>
+  <span class="hdr-sub">高科 iAI Furen-max</span>
+  <div class="hdr-space"></div>
+  <button class="btn-theme" onclick="toggleTheme()">🌓 主題</button>
+</header>
+
+<!-- API Key -->
+<div class="api-bar">
+  <span class="api-lbl">API Key</span>
+  <input class="api-input" type="password" id="apiKey"
+         placeholder="sk-...（從 iai.nkust.edu.tw 取得）"
+         oninput="checkReady()">
+  <span class="api-note">未輸入時略過 LLM 語意萃取，XML 數值仍可解析。金鑰只會經由本站後端轉發呼叫，瀏覽器不會直接連線學校 API（避免 CORS 被擋）</span>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- Step 1 -->
+  <div class="card">
+    <div class="card-head">
+      <span class="step-dot">1</span>
+      <span class="card-title">上傳招標文件</span>
+      <span class="card-caption">XML 精確解析數值；PDF/.docx/.doc/.odt 提供 LLM 語意分析</span>
+    </div>
+    <div class="card-body">
+      <div class="upload-row">
+        <div class="drop-zone" id="zone-xml">
+          <input type="file" id="xmlFile" accept=".xml" onchange="onXml(this)">
+          <div class="dz-icon">📊</div>
+          <div class="dz-lbl">PCCES XML 預算書</div>
+          <div class="dz-sub">含鋼筋／模板／混凝土用量<br>政府採購預算書 .xml</div>
+          <div class="dz-file" id="xml-name"></div>
+        </div>
+        <div class="drop-zone" id="zone-docs">
+          <input type="file" id="docFiles" accept=".docx,.odt,.doc,.pdf" multiple onchange="onDocs(this)">
+          <div class="dz-icon">📄</div>
+          <div class="dz-lbl">招標文字文件／施工圖說（可多選）</div>
+          <div class="dz-sub">投標須知、工程契約、施工圖說、規範<br>.pdf / .docx / .doc / .odt</div>
+          <div class="dz-file" id="docs-name"></div>
+        </div>
+      </div>
+    </div>
+    <div class="status" id="statusBar"></div>
+    <div class="btn-wrap">
+      <button class="btn-extract" id="extractBtn" onclick="doExtract()" disabled>
+        <span>🔍</span><span>開始萃取特徵</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results" hidden>
+
+    <!-- Step 2 -->
+    <div class="card">
+      <div class="card-head">
+        <span class="step-dot">2</span>
+        <span class="card-title">確認並補填特徵</span>
+        <span class="card-caption">
+          <span style="color:var(--green)">▌</span>自動萃取 &nbsp;
+          <span style="color:var(--blue)">▌</span>LLM 推斷 &nbsp;
+          <span style="color:var(--amber)">▌</span>人工填入
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="feat-cols">
+          <div>
+            <div class="sub-title">數值特徵（XML 解析）</div>
+            <div id="f-gfa"></div>
+            <div id="f-rebar"></div>
+            <div id="f-formwork"></div>
+            <div id="f-concrete"></div>
+            <div class="sub-title sub-gap">樓層數（LLM 推斷）</div>
+            <div id="f-above"></div>
+            <div id="f-below"></div>
+          </div>
+          <div>
+            <div class="sub-title">語意特徵（LLM 推斷，請確認）</div>
+            <div id="f-use"></div>
+            <div id="f-region"></div>
+            <div id="f-struct"></div>
+            <div id="f-found"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="card">
+      <div class="card-head">
+        <span class="step-dot">3</span>
+        <span class="card-title">彙整結果</span>
+        <span class="card-caption">補齊所有欄位後下載 JSON 送入預測模型</span>
+      </div>
+      <div class="card-body">
+        <div class="info-bar" id="infoBar" hidden></div>
+        <div class="metric-grid" id="metricGrid"></div>
+        <div class="action-row">
+          <button class="btn-dl" onclick="downloadJSON()">📥 下載特徵 JSON</button>
+          <button class="btn-pred" disabled>💰 預測決標金額（待模型接入）</button>
+          <span class="pred-note">Model A～D 完成後啟用</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /results -->
+</div><!-- /main -->
+
+<script type="module">
+// pdf.js needs its worker set up once the ESM module has loaded; expose the
+// pieces the classic <script> below needs on window.
+import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.min.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.worker.min.mjs';
+window.__pdfjsLib = pdfjsLib;
+window.dispatchEvent(new Event('pdfjs-ready'));
+</script>
+<script>
+// ── Theme ──
+function toggleTheme() {
+  const t = document.documentElement.getAttribute('data-theme');
+  document.documentElement.setAttribute('data-theme', t === 'dark' ? 'light' : t === 'light' ? '' : 'dark');
+  if (document.documentElement.getAttribute('data-theme') === '') document.documentElement.removeAttribute('data-theme');
+}
+
+// ── Upload ──
+function onXml(inp) {
+  const z = document.getElementById('zone-xml');
+  const n = document.getElementById('xml-name');
+  if (inp.files.length) { z.classList.add('active'); n.textContent = inp.files[0].name; }
+  else { z.classList.remove('active'); n.textContent = ''; }
+  checkReady();
+}
+function onDocs(inp) {
+  const z = document.getElementById('zone-docs');
+  const n = document.getElementById('docs-name');
+  if (inp.files.length) { z.classList.add('active'); n.textContent = Array.from(inp.files).map(f=>f.name).join('、'); }
+  else { z.classList.remove('active'); n.textContent = ''; }
+  checkReady();
+}
+function checkReady() {
+  const has = document.getElementById('xmlFile').files.length || document.getElementById('docFiles').files.length;
+  document.getElementById('extractBtn').disabled = !has;
+}
+
+// ── Status ──
+function setStatus(type, msg) {
+  const b = document.getElementById('statusBar');
+  b.className = 'status ' + type;
+  b.innerHTML = type === 'loading' ? `<div class="spin"></div><span>${msg}</span>` : msg;
+}
+
+// ── PCCES XML ──
+const NS = 'http://pcstd.pcc.gov.tw/2003/eTender';
+function nsChild(parent, tag) {
+  for (const c of (parent ? parent.children : [])) if (c.localName === tag) return c;
+  return null;
+}
+function extractXML(txt) {
+  const doc = new DOMParser().parseFromString(txt, 'text/xml');
+  const g = tag => { const e = doc.getElementsByTagNameNS(NS, tag)[0]; return e ? e.textContent.trim() : null; };
+  const n = tag => { const v = g(tag); return v ? parseFloat(v) : null; };
+  const r = { contract_title: g('ContractTitle'), contract_location: g('ContractLocation'),
+               total_amount: n('TotalAmount'), gfa_m2: n('ContractScale'),
+               rebar_ton: 0, formwork_m2: 0, concrete_m3: 0 };
+  for (const el of doc.getElementsByTagNameNS(NS, 'Description')) {
+    const desc = el.textContent.trim();
+    const p = el.parentElement; if (!p) continue;
+    const qe = nsChild(p, 'Quantity'); if (!qe) continue;
+    const qty = parseFloat(qe.textContent); if (isNaN(qty) || qty <= 1) continue;
+    const unit = (nsChild(p, 'Unit') || {}).textContent || '';
+    if (desc.includes('鋼筋') && desc.includes('SD') && desc.includes('含彎紮組立') && unit === 'T') r.rebar_ton += qty;
+    else if (desc.includes('模板') && desc.includes('含組立及拆除') && unit === 'M2') r.formwork_m2 += qty;
+    else if (desc.includes('結構用混凝土') && desc.includes('預拌') && desc.includes('含澆置') && unit === 'M3') r.concrete_m3 += qty;
+  }
+  return r;
+}
+
+// ── Doc reading ──
+async function readDocx(file) {
+  const buf = await file.arrayBuffer();
+  return (await mammoth.extractRawText({ arrayBuffer: buf })).value || '';
+}
+async function readOdt(file) {
+  const zip = await JSZip.loadAsync(file);
+  const cf = zip.file('content.xml'); if (!cf) return '';
+  const doc = new DOMParser().parseFromString(await cf.async('string'), 'text/xml');
+  const ns = 'urn:oasis:names:tc:opendocument:xmlns:text:1.0';
+  return Array.from(doc.getElementsByTagNameNS(ns, 'p')).map(p=>p.textContent.trim()).filter(Boolean).join('\n');
+}
+
+// pdf.js loads as an ES module (see the <script type="module"> above); wait
+// for it to announce readiness before the first PDF is parsed.
+let _pdfjsReadyPromise = null;
+function waitForPdfjs() {
+  if (window.__pdfjsLib) return Promise.resolve(window.__pdfjsLib);
+  if (!_pdfjsReadyPromise) {
+    _pdfjsReadyPromise = new Promise(resolve => {
+      window.addEventListener('pdfjs-ready', () => resolve(window.__pdfjsLib), { once: true });
+    });
+  }
+  return _pdfjsReadyPromise;
+}
+// 施工圖說常常有幾百頁，且多半是重複的圖框/圖例；只抓前面一定頁數 +
+// 一旦抓到夠多字就提早停止，避免瀏覽器端解析太久、送給 LLM 的內容也太肥大。
+const PDF_MAX_PAGES = 40;
+const PDF_MAX_CHARS = 20000;
+async function readPdf(file, onProgress) {
+  const pdfjsLib = await waitForPdfjs();
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const pageCount = Math.min(pdf.numPages, PDF_MAX_PAGES);
+  let text = '';
+  for (let i = 1; i <= pageCount; i++) {
+    if (onProgress) onProgress(i, pageCount, pdf.numPages);
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map(it => it.str).join(' ') + '\n';
+    if (text.length >= PDF_MAX_CHARS) break;
+  }
+  return { text: text.slice(0, PDF_MAX_CHARS), totalPages: pdf.numPages, readPages: pageCount };
+}
+
+// .doc（舊版二進位格式）瀏覽器端解不動，丟給後端 Function（word-extractor）處理。
+async function readDoc(file) {
+  const buf = await file.arrayBuffer();
+  let binary = '';
+  const bytes = new Uint8Array(buf);
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  const base64 = btoa(binary);
+  const resp = await fetch('/.netlify/functions/process', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'doc', name: file.name, base64 }),
+  });
+  if (!resp.ok) throw new Error(`.doc 解析服務錯誤 HTTP ${resp.status}`);
+  const data = await resp.json();
+  if (data.warning) console.warn(data.warning);
+  return data.text || '';
+}
+
+async function collectText(files) {
+  const pri = ['投標須知','工程採購契約','工程概要','招標文件','施工圖說','施工規範'];
+  const sorted = Array.from(files).sort((a,b) => {
+    const ra = (() => { const i = pri.findIndex(k=>a.name.includes(k)); return i<0?10:i; })();
+    const rb = (() => { const i = pri.findIndex(k=>b.name.includes(k)); return i<0?10:i; })();
+    return ra - rb;
+  });
+  const parts = [];
+  for (const f of sorted) {
+    try {
+      let t = '';
+      const lower = f.name.toLowerCase();
+      if (lower.endsWith('.docx')) t = await readDocx(f);
+      else if (lower.endsWith('.odt')) t = await readOdt(f);
+      else if (lower.endsWith('.doc')) {
+        setStatus('loading', `後端解析 .doc：${f.name}…`);
+        t = await readDoc(f);
+      } else if (lower.endsWith('.pdf')) {
+        const r = await readPdf(f, (i, n, total) => {
+          setStatus('loading', `讀取 PDF：${f.name}（第 ${i}/${n} 頁${total>n?`，僅取前 ${n}/${total} 頁`:''}）…`);
+        });
+        t = r.text;
+      }
+      if (t.trim()) parts.push(`【${f.name}】\n${t}`);
+    } catch(e) { console.warn('略過', f.name, e); }
+  }
+  return parts.join('\n\n').slice(0, 16000);
+}
+
+// ── LLM（透過後端 Function 轉發，避開 CORS、金鑰仍由使用者自行輸入）──
+async function callLLM(key, text) {
+  const resp = await fetch('/.netlify/functions/process', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'llm', apiKey: key, text }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return data.result;
+}
+
+// ── Options ──
+const BUILD_OPT = [
+  {l:'工業 — 廠房、倉庫、工廠 (1)', v:1, k:'工業'},
+  {l:'住宿 — 宿舍、公寓、旅館 (2)', v:2, k:'住宿'},
+  {l:'教育商業 — 學校、活動中心、社福 (3)', v:3, k:'教育商業'},
+  {l:'辦公 — 行政大樓、政府機關 (4)', v:4, k:'辦公'},
+  {l:'醫療 — 醫院、診所、衛生所 (5)', v:5, k:'醫療'},
+];
+const REGION_OPT = [
+  {l:'北部 — 台北/新北/桃園/新竹 (1.21)', v:1.21, kw:['台北','新北','桃園','新竹','基隆']},
+  {l:'中部 — 台中/苗栗/彰化/南投/雲林 (1.02)', v:1.02, kw:['台中','苗栗','彰化','南投','雲林']},
+  {l:'南部 — 台南/高雄/嘉義/屏東 (1.00)', v:1.00, kw:['台南','高雄','嘉義','屏東']},
+  {l:'東部 — 宜蘭/花蓮/台東 (1.069)', v:1.069, kw:['宜蘭','花蓮','台東']},
+];
+const STRUCT_OPT = [
+  {l:'RC — 鋼筋混凝土 (1)', v:1, k:'RC'},
+  {l:'SRC — 鋼骨鋼筋混凝土 (2)', v:2, k:'SRC'},
+  {l:'S — 純鋼骨 (3)', v:3, k:'S'},
+  {l:'SC — 鋼管混凝土外殼 (4)', v:4, k:'SC'},
+  {l:'CFT — 鋼管混凝土 (5)', v:5, k:'CFT'},
+];
+const FOUND_OPT = [
+  {l:'獨立基礎 (1)', v:1}, {l:'筏式基礎 (2)', v:2},
+  {l:'混合基礎 (3)', v:3}, {l:'地質改良 (4)', v:4}, {l:'樁基礎 (5)', v:5},
+];
+
+// ── Main flow ──
+async function doExtract() {
+  const btn = document.getElementById('extractBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spin" style="border-color:rgba(255,255,255,.3);border-top-color:#fff"></div><span>萃取中…</span>';
+  document.getElementById('results').hidden = true;
+  let xml = {}, llm = {};
+  try {
+    const xf = document.getElementById('xmlFile').files[0];
+    const df = document.getElementById('docFiles').files;
+    const key = document.getElementById('apiKey').value.trim();
+
+    if (xf) { setStatus('loading','解析 PCCES XML…'); xml = extractXML(await xf.text()); }
+
+    let docText = '';
+    if (df.length) { docText = await collectText(df); }
+    let prefix = '';
+    if (xml.contract_title) prefix += `工程名稱：${xml.contract_title}\n`;
+    if (xml.contract_location) prefix += `施工地點：${xml.contract_location}\n`;
+    docText = prefix + docText;
+
+    if (docText.trim() && key) {
+      setStatus('loading','呼叫 Furen-max API…');
+      try { llm = await callLLM(key, docText); }
+      catch(e) {
+        setStatus('err', `⚠ LLM 失敗：${e.message}。語意特徵請手動選擇。`);
+      }
+    } else if (!key) {
+      setStatus('err','⚠ 未輸入 API Key，略過 LLM。請輸入後重新萃取，或手動選擇語意特徵。');
+    }
+
+    renderResults(xml, llm);
+    document.getElementById('results').hidden = false;
+    const sb = document.getElementById('statusBar');
+    if (!sb.classList.contains('err')) setStatus('ok','✓ 萃取完成！請確認下方欄位並補齊缺漏項目。');
+  } catch(e) {
+    setStatus('err', `萃取失敗：${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span>🔍</span><span>重新萃取</span>';
+  }
+}
+
+// ── Render ──
+function fmtNum(v, dec=2) {
+  if (v === null || v === undefined) return null;
+  const n = typeof v === 'string' ? parseFloat(v) : v;
+  if (isNaN(n)) return null;
+  return n.toFixed(dec).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function mkNumField(label, value, unit, id, step='0.01', min='0') {
+  const has = value !== null && value !== undefined && value !== 0;
+  const cls = has ? 'field field-g' : 'field field-a';
+  const badge = has ? '<span class="badge bg-g">自動</span>' : '<span class="badge bg-a">人工填入</span>';
+  if (has) {
+    return `<div class="${cls}">
+      <div class="field-row"><span class="field-lbl">${label}</span>${badge}</div>
+      <div class="field-val">${fmtNum(value)}<span class="unit">${unit}</span></div>
+      <input type="hidden" id="${id}" value="${value}">
+    </div>`;
+  } else {
+    return `<div class="${cls}">
+      <div class="field-row"><span class="field-lbl">${label}</span>${badge}</div>
+      <input class="f-input" type="number" id="${id}" step="${step}" min="${min}" placeholder="0" oninput="updateMetrics()">
+    </div>`;
+  }
+}
+
+function mkNumFieldZeroOk(label, value, unit, id) {
+  const has = value !== null && value !== undefined;
+  const cls = has ? 'field field-b' : 'field field-a';
+  const badge = has ? '<span class="badge bg-b">LLM</span>' : '<span class="badge bg-a">人工填入</span>';
+  if (has) {
+    return `<div class="${cls}">
+      <div class="field-row"><span class="field-lbl">${label}</span>${badge}</div>
+      <div class="field-val">${value}<span class="unit">${unit}</span></div>
+      <input type="hidden" id="${id}" value="${value}">
+    </div>`;
+  } else {
+    return `<div class="${cls}">
+      <div class="field-row"><span class="field-lbl">${label}</span>${badge}</div>
+      <input class="f-input" type="number" id="${id}" step="1" min="0" placeholder="0" oninput="updateMetrics()">
+    </div>`;
+  }
+}
+
+function mkSelect(label, opts, selectedVal, id, hint) {
+  const has = selectedVal !== null && selectedVal !== undefined;
+  const cls = has ? 'field field-b' : 'field field-a';
+  const badge = has ? '<span class="badge bg-b">LLM</span>' : '<span class="badge bg-a">人工填入</span>';
+  const hintHtml = hint ? `<div class="llm-hint">${hint}</div>` : '';
+  const placeholder = has ? '' : '<option value="" disabled selected>— 請選擇 —</option>';
+  const options = opts.map(o => `<option value="${o.v}" ${o.v == selectedVal ? 'selected' : ''}>${o.l}</option>`).join('');
+  return `<div class="${cls}">
+    <div class="field-row"><span class="field-lbl">${label}</span>${badge}</div>
+    ${hintHtml}
+    <select class="f-select" id="${id}" onchange="updateMetrics()">${placeholder}${options}</select>
+  </div>`;
+}
+
+function renderResults(xml, llm) {
+  const gfa = xml.gfa_m2 || llm.gfa_m2 || null;
+  document.getElementById('f-gfa').innerHTML      = mkNumField('樓地板面積', gfa, 'm²', 'inp-gfa');
+  document.getElementById('f-rebar').innerHTML    = mkNumField('鋼筋用量', xml.rebar_ton||null, '噸', 'inp-rebar');
+  document.getElementById('f-formwork').innerHTML = mkNumField('模板用量', xml.formwork_m2||null, 'M²', 'inp-fw');
+  document.getElementById('f-concrete').innerHTML = mkNumField('混凝土用量', xml.concrete_m3||null, 'M³', 'inp-conc');
+
+  const fa = llm.floors_above !== undefined ? llm.floors_above : null;
+  const fb = llm.floors_below !== undefined ? llm.floors_below : null;
+  document.getElementById('f-above').innerHTML = mkNumFieldZeroOk('地上樓層數', fa, '層', 'inp-fa');
+  document.getElementById('f-below').innerHTML = mkNumFieldZeroOk('地下樓層數', fb, '層', 'inp-fb');
+
+  const buKey = llm.building_use;
+  const buOpt = BUILD_OPT.find(o=>o.k===buKey);
+  document.getElementById('f-use').innerHTML = mkSelect('建築用途', BUILD_OPT, buOpt?.v||null, 'sel-use', buKey);
+
+  const reg = llm.region || '';
+  const regOpt = REGION_OPT.find(o=>o.kw.some(k=>reg.includes(k)));
+  document.getElementById('f-region').innerHTML = mkSelect('地區係數', REGION_OPT, regOpt?.v||null, 'sel-region', reg||null);
+
+  const stKey = llm.structure_type;
+  const stOpt = STRUCT_OPT.find(o=>o.k===stKey);
+  document.getElementById('f-struct').innerHTML = mkSelect('結構型式', STRUCT_OPT, stOpt?.v||null, 'sel-struct', stKey);
+  document.getElementById('f-found').innerHTML  = mkSelect('基礎型式（需查結構圖說）', FOUND_OPT, null, 'sel-found', null);
+
+  const ib = document.getElementById('infoBar');
+  if (xml.contract_title || xml.total_amount) {
+    ib.hidden = false;
+    ib.innerHTML =
+      (xml.contract_title ? `<div><strong>工程名稱：</strong>${xml.contract_title}</div>` : '') +
+      (xml.total_amount   ? `<div><strong>預算金額：</strong>${xml.total_amount.toLocaleString()} 元</div>` : '') +
+      (xml.contract_location ? `<div><strong>施工地點：</strong>${xml.contract_location}</div>` : '');
+  } else { ib.hidden = true; }
+
+  updateMetrics();
+}
+
+// ── Get value ──
+function gv(id, type='float') {
+  const el = document.getElementById(id); if (!el) return null;
+  const v = el.value; if (v === '' || v === undefined) return null;
+  if (type === 'float') { const n = parseFloat(v); return isNaN(n) ? null : n; }
+  if (type === 'int')   { const n = parseInt(v);   return isNaN(n) ? null : n; }
+  return v;
+}
+
+function getFeatures() {
+  return {
+    '樓地板面積 (m²)': gv('inp-gfa'),
+    '鋼筋用量 (噸)':   gv('inp-rebar'),
+    '模板用量 (M²)':   gv('inp-fw'),
+    '混凝土用量 (M³)': gv('inp-conc'),
+    '地上樓層':         gv('inp-fa','int'),
+    '地下樓層':         gv('inp-fb','int'),
+    '建築用途代碼':     gv('sel-use','int'),
+    '結構型式代碼':     gv('sel-struct','int'),
+    '地區係數':         gv('sel-region'),
+    '基礎型式代碼':     gv('sel-found','int'),
+  };
+}
+
+// ── Metrics ──
+const META = [
+  {k:'樓地板面積 (m²)', u:'m²'}, {k:'鋼筋用量 (噸)', u:'噸'},
+  {k:'模板用量 (M²)',   u:'M²'}, {k:'混凝土用量 (M³)', u:'M³'},
+  {k:'地上樓層', u:'層'},        {k:'地下樓層', u:'層'},
+  {k:'建築用途代碼', u:''},      {k:'結構型式代碼', u:''},
+  {k:'地區係數', u:''},          {k:'基礎型式代碼', u:''},
+];
+function updateMetrics() {
+  const feats = getFeatures();
+  const grid = document.getElementById('metricGrid');
+  grid.innerHTML = '';
+  for (const {k,u} of META) {
+    const v = feats[k];
+    const miss = v === null || v === undefined;
+    const display = miss ? '—' : (typeof v==='number' && !Number.isInteger(v)) ? v.toFixed(2) : String(v);
+    const tile = document.createElement('div');
+    tile.className = 'm-tile' + (miss ? ' missing' : '');
+    tile.innerHTML = `<div class="m-lbl">${k}</div>
+      <div class="m-val${miss?' empty':''}">${display}</div>
+      ${u?`<div class="m-unit">${u}</div>`:''}`;
+    grid.appendChild(tile);
+  }
+}
+
+// ── Download ──
+function downloadJSON() {
+  const feats = getFeatures();
+  const clean = Object.fromEntries(Object.entries(feats).map(([k,v]) =>
+    [k, v !== null && typeof v === 'number' ? +v.toFixed(4) : v]
+  ));
+  const blob = new Blob([JSON.stringify(clean, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { href: url, download: 'features.json' });
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 100);
+}
+</script>
+</body>
+</html>
