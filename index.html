@@ -575,8 +575,8 @@ function waitForPdfjs() {
 }
 // 施工圖說常常有幾百頁，且多半是重複的圖框/圖例；只抓前面一定頁數 +
 // 一旦抓到夠多字就提早停止，避免瀏覽器端解析太久、送給 LLM 的內容也太肥大。
-const PDF_MAX_PAGES = 40;
-const PDF_MAX_CHARS = 20000;
+const PDF_MAX_PAGES = 12;
+const PDF_MAX_CHARS = 4000;
 async function readPdf(file, onProgress) {
   const pdfjsLib = await waitForPdfjs();
   const buf = await file.arrayBuffer();
@@ -640,7 +640,7 @@ async function collectText(files) {
       if (t.trim()) parts.push(`【${f.name}】\n${t}`);
     } catch(e) { console.warn('略過', f.name, e); }
   }
-  return parts.join('\n\n').slice(0, 16000);
+  return parts.join('\n\n').slice(0, 6000);
 }
 
 // ── LLM（透過後端 Function 轉發，避開 CORS、金鑰仍由使用者自行輸入）──
