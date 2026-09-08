@@ -541,9 +541,13 @@ function extractXML(txt) {
     const qe = nsChild(p, 'Quantity'); if (!qe) continue;
     const qty = parseFloat(qe.textContent); if (isNaN(qty) || qty <= 1) continue;
     const unit = (nsChild(p, 'Unit') || {}).textContent || '';
-    if (desc.includes('鋼筋') && desc.includes('SD') && desc.includes('含彎紮組立') && unit === 'T') r.rebar_ton += qty;
-    else if (desc.includes('模板') && desc.includes('含組立及拆除') && unit === 'M2') r.formwork_m2 += qty;
-    else if (desc.includes('結構用混凝土') && desc.includes('預拌') && desc.includes('含澆置') && unit === 'M3') r.concrete_m3 += qty;
+    // 原本要求「含彎紮組立」「含組立及拆除」等精確措辭，但不同機關/標案的
+    // 品項描述寫法差異很大（例如「連工帶料」「組立」而非固定措辭），太嚴格
+    // 會整批漏抓。放寬成只認「鋼筋+SD+噸」「模板+M2」「混凝土+M3」的組合，
+    // 搭配上面已有的 qty<=1 略過規則（排除單價/小計性質的參考項目）。
+    if (desc.includes('鋼筋') && desc.includes('SD') && unit === 'T') r.rebar_ton += qty;
+    else if (desc.includes('模板') && unit === 'M2') r.formwork_m2 += qty;
+    else if (desc.includes('混凝土') && (desc.includes('結構') || desc.includes('預拌')) && unit === 'M3') r.concrete_m3 += qty;
   }
   return r;
 }
