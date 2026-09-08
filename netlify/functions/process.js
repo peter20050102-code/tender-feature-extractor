@@ -66,7 +66,7 @@ async function handleLlm(payload) {
         ],
         response_format: { type: 'json_object' },
         temperature: 0.1,
-        max_tokens: 400,
+        max_tokens: 800,
       }),
     });
   } catch (e) {
@@ -81,6 +81,9 @@ async function handleLlm(payload) {
   const data = await resp.json();
   let raw = (data.choices && data.choices[0] && data.choices[0].message.content) || '';
   raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+  const finishReason = data.choices && data.choices[0] && data.choices[0].finish_reason;
+  console.log('[llm] textLen=%d finish_reason=%s rawLen=%d raw=%s',
+    (text || '').length, finishReason, raw.length, raw.slice(0, 1500));
 
   try {
     return json(200, { result: JSON.parse(raw) });
