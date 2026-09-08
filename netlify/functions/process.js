@@ -96,7 +96,34 @@ async function handleLlm(payload) {
     fixed += '}'.repeat(Math.max(0, opens - closes));
     try {
       return json(200, { result: JSON.parse(fixed) });
-    } catch (e) {
+    } catch (secondErr) {
+      // 模型偶爾會把 JSON 的 key 寫壞（例如混進雜訊字元），但值本身通常還在、
+      // 順序也還是照 prompt 定義的欄位順序。與其整包放棄，不如不管 key 對不
+      // 對，照出現順序把值一個個抓出來對應回我們自己的欄位名稱。
+      const FIELD_ORDER = ['building_use', 'floors_above', 'floors_below', 'gfa_m2', 'structure_type', 'region'];
+      const valueRe = /:\s*("(?:[^"\\]|\\.)*"|null|-?\d+(?:\.\d+)?)/g;
+      const values = [];
+      let m;
+      while ((m = valueRe.exec(raw)) !== null) values.push(m[1]);
+      if (values.length >= 3) {
+        const parsed = {};
+        FIELD_ORDER.forEach((key, i) => {
+          if (i >= values.length) return;
+          let v = values[i];
+          if (v === 'null') parsed[key] = null;
+          else if (v.startsWith('"')) parsed[key] = v.slice(1, -1);
+          else parsed[key] = parseFloat(v);
+        });
+        // building_use 開頭那段有時被模型寫得特別亂（連值都跑到引號外面），
+        // 光靠位置抓值救不回來；用類別關鍵字直接在全文找一次做二次確認。
+        const BUILD_KEYS = ['工業', '住宿', '教育商業', '辦公', '醫療'];
+        if (!BUILD_KEYS.includes(parsed.building_use)) {
+          const hit = BUILD_KEYS.find(k => raw.includes(k));
+          if (hit) parsed.building_use = hit;
+        }
+        console.log('[llm] fell back to positional parse:', JSON.stringify(parsed));
+        return json(200, { result: parsed, warning: '模型回覆的 JSON 格式有誤，已用備援方式依欄位順序解析' });
+      }
       return json(502, { error: `模型回覆非合法 JSON：${firstErr.message}`, raw: raw.slice(0, 1000) });
     }
   }
