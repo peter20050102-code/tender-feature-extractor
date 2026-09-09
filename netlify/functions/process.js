@@ -64,7 +64,11 @@ async function handleLlm(payload) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: 'Furen-max',
+        // Furen-max 是推理模型，回答前會先寫一大段思考過程（reasoning_content），
+        // 實測光是~4000字的輸入就要 19~21 秒，很容易撞到 Netlify Function 30 秒的
+        // 硬上限造成 504。改用 Furen-std（同一個 API 提供的非推理模型）：同樣的
+        // prompt 和輸入實測只要 1.4~1.7 秒，且答案一樣正確（含多棟合計判斷）。
+        model: 'Furen-std',
         messages: [
           { role: 'system', content: SYS },
           { role: 'user', content: UTPL + text + '\n---' },
