@@ -848,6 +848,20 @@ function mkNumFieldZeroOk(label, value, unit, id) {
   }
 }
 
+// 面積計算表這類表格靠 OCR 讀出來的文字常常行列錯位、數字黏在一起，實測過
+// LLM 會因此抓錯完全不相關的數字、而且講得很篤定、不會主動示警。所以只要這
+// 次萃取有用到 OCR，樓地板面積／樓層數這幾個「表格類」欄位就不能用平常那種
+// 「自動/LLM，鎖定顯示」的樣式，要用「人工填入」同一套的橘色＋可編輯輸入框
+// 樣式，並附上明確警語，讓使用者知道這是「LLM 從 OCR 猜的，務必自己核對」，
+// 而不是誤以為是可信賴的自動結果。
+function mkNumFieldNeedsCheck(label, value, unit, id, step='0.01', min='0') {
+  return `<div class="field field-a">
+    <div class="field-row"><span class="field-lbl">${label}</span><span class="badge bg-a">⚠ OCR 待核對</span></div>
+    <div class="llm-hint" style="color:var(--amber)">⚠ 由圖表 OCR 辨識推測，正確性未經驗證，請對照原圖說核對後修正</div>
+    <input class="f-input" type="number" id="${id}" step="${step}" min="${min}" value="${value ?? ''}" placeholder="0" oninput="updateMetrics()">
+  </div>`;
+}
+
 function mkSelect(label, opts, selectedVal, id, hint) {
   const has = selectedVal !== null && selectedVal !== undefined;
   const cls = has ? 'field field-b' : 'field field-a';
@@ -863,16 +877,28 @@ function mkSelect(label, opts, selectedVal, id, hint) {
 }
 
 function renderResults(xml, llm) {
+  const ocrUsed = !!(window.__ocrNotes && window.__ocrNotes.length);
+
+  // 樓地板面積如果是 XML 精確解析出來的（ContractScale），那是可信的數字，
+  // 不受 OCR 警語影響；只有「XML 沒有、退回用 LLM/OCR 猜」的情況才要示警。
+  const gfaFromXml = !!xml.gfa_m2;
   const gfa = xml.gfa_m2 || llm.gfa_m2 || null;
-  document.getElementById('f-gfa').innerHTML      = mkNumField('樓地板面積', gfa, 'm²', 'inp-gfa');
+  document.getElementById('f-gfa').innerHTML = (!gfaFromXml && ocrUsed && gfa)
+    ? mkNumFieldNeedsCheck('樓地板面積', gfa, 'm²', 'inp-gfa')
+    : mkNumField('樓地板面積', gfa, 'm²', 'inp-gfa');
   document.getElementById('f-rebar').innerHTML    = mkNumField('鋼筋用量', xml.rebar_ton||null, '噸', 'inp-rebar');
   document.getElementById('f-formwork').innerHTML = mkNumField('模板用量', xml.formwork_m2||null, 'M²', 'inp-fw');
   document.getElementById('f-concrete').innerHTML = mkNumField('混凝土用量', xml.concrete_m3||null, 'M³', 'inp-conc');
 
+  // 地上/地下樓層數目前一律來自 LLM（沒有 XML 來源），OCR 有用到時同樣示警。
   const fa = llm.floors_above !== undefined ? llm.floors_above : null;
   const fb = llm.floors_below !== undefined ? llm.floors_below : null;
-  document.getElementById('f-above').innerHTML = mkNumFieldZeroOk('地上樓層數', fa, '層', 'inp-fa');
-  document.getElementById('f-below').innerHTML = mkNumFieldZeroOk('地下樓層數', fb, '層', 'inp-fb');
+  document.getElementById('f-above').innerHTML = (ocrUsed && fa !== null)
+    ? mkNumFieldNeedsCheck('地上樓層數', fa, '層', 'inp-fa', '1', '0')
+    : mkNumFieldZeroOk('地上樓層數', fa, '層', 'inp-fa');
+  document.getElementById('f-below').innerHTML = (ocrUsed && fb !== null)
+    ? mkNumFieldNeedsCheck('地下樓層數', fb, '層', 'inp-fb', '1', '0')
+    : mkNumFieldZeroOk('地下樓層數', fb, '層', 'inp-fb');
 
   const buKey = llm.building_use;
   const buOpt = BUILD_OPT.find(o=>o.k===buKey);
